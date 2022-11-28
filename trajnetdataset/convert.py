@@ -2,17 +2,27 @@
 import argparse
 import shutil
 import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib
 import random
 
 import pysparkling
 import scipy.io
-
+import json
 from . import readers
 from .scene import Scenes
 from .get_type import trajectory_type
 
+from l5kit.data import ChunkedDataset, LocalDataManager
+from tqdm import tqdm
+from l5kit.rasterization import build_rasterizer
+from l5kit.geometry import transform_points
+from l5kit.configs import load_config_data
+from l5kit.dataset import EgoDataset, AgentDataset
+
 import warnings
 warnings.filterwarnings("ignore")
+matplotlib.use("QtAgg")
 
 def biwi(sc, input_file):
     print('processing ' + input_file)
@@ -116,6 +126,96 @@ def car_data(sc, input_file):
             .wholeTextFiles(input_file)
             .flatMap(readers.car_data)
             .cache())
+
+def woven_planet(sc, input_file):
+    cfg = load_config_data("./visualisation_config.yaml")
+
+    print('processing ' + input_file)
+    dm = LocalDataManager()
+    dataset_path = dm.require("sample.zarr")
+    zarr_dataset = ChunkedDataset(dataset_path).open()
+    # rast = build_rasterizer(cfg, dm)
+    # dataset = AgentDataset(cfg, zarr_dataset, rast)
+    # print(dataset.agent_from_world)
+    # for agent in dataset:
+    # for idx in range(11):
+    scenes = []
+    tracks = []
+    last_idx = 0
+    with open('output_pre/train/woven_planet.ndjson', 'w') as f:
+        for scene_idx in range(4):
+            start = zarr_dataset.scenes[scene_idx]["frame_index_interval"][0]
+            end = zarr_dataset.scenes[scene_idx]["frame_index_interval"][1]
+            host = zarr_dataset.scenes[scene_idx]["host"]
+            frames = zarr_dataset.frames[start:end]
+            line = {"scene": {"id": int(scene_idx), "p": 1, "s": int(start), "e": int(end), "fps": 2.5, "tag": 0}}
+            
+            scenes.append(line)
+            for frame_idx, frame in enumerate(frames):
+                start_agent = frame["agent_index_interval"][0]
+                end_agent = frame["agent_index_interval"][1]
+                agents = zarr_dataset.agents[start_agent:end_agent][zarr_dataset.agents[start_agent:end_agent]["label_probabilities"][:, 3] > 0.95]
+                for agent in agents:
+                    track = {"track": {"f": int(frame_idx) + last_idx, "p": int(agent["track_id"]), "x": float(agent["centroid"][0]), "y": float(agent["centroid"][1])}}
+                    tracks.append(track)
+                    
+            last_idx = int(end) + last_idx
+        
+        for scene in scenes:
+            f.write(json.dumps(scene) + "\n")
+        for track in tracks:
+            f.write(json.dumps(track) + "\n")
+
+        # for frame_idx in range(1000):
+        #     start = zarr_dataset.frames[frame_idx]["agent_index_interval"][0]
+        #     end = zarr_dataset.frames[frame_idx]["agent_index_interval"][1]
+        #     # agents = zarr_dataset.agents[idx]["agent_index_intervall"]
+        #     agents = zarr_dataset.agents[start:end][zarr_dataset.agents[start:end]["label_probabilities"][:, 3] > 0.75]
+        #     for agent in agents:
+        #         f.write(str(frame_idx) + "\t" + str(agent["track_id"]) + "\t")
+        #         f.write(str(agent["centroid"][0]) + "\t" + str(agent["centroid"][1])  + "\t")
+        #         f.write('\n')
+
+
+
+
+
+
+
+        # centroids.append(centroid)
+    #     print(agent["centroid"])
+    # with open('readme.txt', 'w') as f:
+    #     for frame_idx in tqdm(range(1000)):
+    #         data = dataset.get_frame_indices(frame_idx)
+    #         if len(data) != 0:
+    #             # print(data):
+    #             for agent in data:
+    #                 # print(dataset[agent]["label_probabilities"])
+    #                 # print(dataset[agent]["centroid"])
+    #                 print(dataset[agent]["agent_from_world"])
+    #                 f.write(str(frame_idx) + "\t" + str(dataset[agent]["track_id"]) + "\t")
+    #                 pos = transform_points(dataset[agent]["centroid"], data["agent_from_world"])
+    #                 f.write(str(pos[0]) + "\t" + str(dpos[1])  + "\t")
+    #                 f.write('\n')
+
+        # for scene_idx in tqdm(range(3)):
+        # data = dataset.get_scene_indices(3)
+        # if len(data) != 0:
+        #     # print(data):
+        #     for idx in data:
+        #         # print(dataset[agent]["timestamp"])
+        #         # print(dataset[agent]["track_id"])
+        #         f.write(str(dataset[agent]["timestamp"]) + "\t" + str(dataset[agent]["track_id"]) + "\t")
+        #         f.write(str(dataset[agent]["centroid"][0]) + "\t" + str(dataset[agent]["centroid"][1])  + "\t")
+        #         f.write('\n')
+
+            # f.write(str(idx_data) + "\t" + str(random.randrange(0, 50)) + "\t")
+            # f.write(str(frame["ego_translation"][:2][0]) + "\t" + str(frame["ego_translation"][:2][1]) + "\t")
+            # f.write('\n')
+
+
+    # return standard(sc, "/home/janos/projects/mpfav/trajnetplusplus-for-vehicles/trajnet++/trajnetplusplusdataset/readme.txt")          
+
 
 def write(input_rows, output_file, args):
     """ Write Valid Scenes without categorization """
@@ -251,26 +351,27 @@ def main():
 
     # Real datasets conversion
     if not args.synthetic:
-        write(biwi(sc, 'data/raw/biwi/seq_hotel/obsmat.txt'),
-              'output_pre/{split}/biwi_hotel.ndjson', args)
-        categorize(sc, 'output_pre/{split}/biwi_hotel.ndjson', args)
-        write(crowds(sc, 'data/raw/crowds/crowds_zara01.vsp'),
-              'output_pre/{split}/crowds_zara01.ndjson', args)
-        categorize(sc, 'output_pre/{split}/crowds_zara01.ndjson', args)
-        write(crowds(sc, 'data/raw/crowds/crowds_zara03.vsp'),
-              'output_pre/{split}/crowds_zara03.ndjson', args)
-        categorize(sc, 'output_pre/{split}/crowds_zara03.ndjson', args)
-        write(crowds(sc, 'data/raw/crowds/students001.vsp'),
-              'output_pre/{split}/crowds_students001.ndjson', args)
-        categorize(sc, 'output_pre/{split}/crowds_students001.ndjson', args)
-        write(crowds(sc, 'data/raw/crowds/students003.vsp'),
-              'output_pre/{split}/crowds_students003.ndjson', args)
-        categorize(sc, 'output_pre/{split}/crowds_students003.ndjson', args)
+        # write(standard(sc, 'data/eth/train/biwi_hotel_train.txt'),
+        #     'output_pre/{split}/biwi_hotel_train.ndjson', args)
+        # categorize(sc, 'output_pre/{split}/biwi_hotel_train.ndjson', args)
+        # categorize(sc, 'output_pre/{split}/biwi_hotel_train.ndjson', args)
+        # write(crowds(sc, 'data/raw/crowds/crowds_zara01.vsp'),
+        #       'output_pre/{split}/crowds_zara01.ndjson', args)
+        # categorize(sc, 'output_pre/{split}/crowds_zara01.ndjson', args)
+        # write(crowds(sc, 'data/raw/crowds/crowds_zara03.vsp'),
+        #       'output_pre/{split}/crowds_zara03.ndjson', args)
+        # categorize(sc, 'output_pre/{split}/crowds_zara03.ndjson', args)
+        # write(crowds(sc, 'data/raw/crowds/students001.vsp'),
+        #       'output_pre/{split}/crowds_students001.ndjson', args)
+        # categorize(sc, 'output_pre/{split}/crowds_students001.ndjson', args)
+        # write(crowds(sc, 'data/raw/crowds/students003.vsp'),
+        #       'output_pre/{split}/crowds_students003.ndjson', args)
+        # categorize(sc, 'output_pre/{split}/crowds_students003.ndjson', args)
 
+        # write(woven_planet(sc, 'd/home/janos/projects/mpfav/trajnetplusplus-for-vehicles/trajnet++/trajnetplusplusdataset/data/sample.zarr'),'output_pre/{split}/woven_planet.ndjson', args)
         # # # new datasets
-        # write(lcas(sc, 'data/raw/lcas/test/data.csv'),
-        #       'output_pre/{split}/lcas.ndjson', args)
-        # categorize(sc, 'output_pre/{split}/lcas.ndjson', args)
+        woven_planet(sc, 'd/home/janos/projects/mpfav/trajnetplusplus-for-vehicles/trajnet++/trajnetplusplusdataset/data/sample.zarr')
+        categorize(sc, 'output_pre/{split}/woven_planet.ndjson', args)
 
         # args.fps = 2
         # write(wildtrack(sc, 'data/raw/wildtrack/Wildtrack_dataset/annotations_positions/*.json'),

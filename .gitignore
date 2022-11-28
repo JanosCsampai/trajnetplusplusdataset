@@ -19,7 +19,9 @@ dist/
 
 # OS
 .DS_Store
-
+socialforce-main
+data
+datasets
 # backup
 backup/
 

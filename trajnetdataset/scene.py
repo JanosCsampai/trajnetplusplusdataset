@@ -76,18 +76,18 @@ class Scenes(object):
                 if self.euclidean_distance_2(path[i], path[i+self.chunk_size-1]) > self.min_length
             ])
 
-            # filter out scenes with large gaps in frame numbers
-            .filter(lambda ped_frames: self.continuous_frames(ped_frames[1]))
+            # # filter out scenes with large gaps in frame numbers
+            # .filter(lambda ped_frames: self.continuous_frames(ped_frames[1]))
 
-            # filter for scenes that have some activity
-            .filter(lambda ped_frames:
-                    sum(count_by_frame[f] for f in ped_frames[1]) >= 2.0 * self.chunk_size)
+            # # filter for scenes that have some activity
+            # .filter(lambda ped_frames:
+            #         sum(count_by_frame[f] for f in ped_frames[1]) >= 2.0 * self.chunk_size)
 
-            # require some proximity to other pedestrians
-            .filter(lambda ped_frames:
-                    ped_frames[0] in {p
-                                      for frame in ped_frames[1]
-                                      for p in occupancy_by_frame[frame]})
+            # # require some proximity to other pedestrians
+            # .filter(lambda ped_frames:
+            #         ped_frames[0] in {p
+            #                           for frame in ped_frames[1]
+            #                           for p in occupancy_by_frame[frame]})
 
             .cache()
         )
